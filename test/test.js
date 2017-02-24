@@ -12,6 +12,7 @@ const rollup = require( '../dist/rollup' );
 const FUNCTION = path.resolve( __dirname, 'function' );
 const FORM = path.resolve( __dirname, 'form' );
 const SOURCEMAPS = path.resolve( __dirname, 'sourcemaps' );
+const SPLITTING = path.resolve( __dirname, 'splitting' );
 const CLI = path.resolve( __dirname, 'cli' );
 
 const PROFILES = [
@@ -852,6 +853,53 @@ describe( 'rollup', function () {
 				const relevantWarnings = warnings.filter( warning => warning.code === 'MISSING_NODE_BUILTINS' );
 				assert.equal( relevantWarnings.length, 1 );
 				assert.equal( relevantWarnings[0].message, `Creating a browser bundle that depends on Node.js built-in module ('util'). You might need to include https://www.npmjs.com/package/rollup-plugin-node-builtins` );
+			});
+		});
+	});
+
+	describe( 'code splitting', () => {
+		sander.readdirSync( SPLITTING ).sort().forEach( dir => {
+			if ( dir[0] === '.' ) return; // .DS_Store...
+
+			describe( dir, () => {
+				process.chdir( SPLITTING + '/' + dir );
+				const config = loadConfig( SPLITTING + '/' + dir + '/_config.js' );
+
+				const dest = path.resolve( SPLITTING, dir, '_actual/bundle' );
+
+				let warnings;
+
+				const options = extend( {}, config.options, {
+					onwarn: warning => warnings.push( warning )
+				});
+
+				PROFILES.forEach( profile => {
+					( config.skip ? it.skip : config.solo ? it.only : it )( 'generates ' + profile.format, () => {
+						process.chdir( SPLITTING + '/' + dir );
+						warnings = [];
+
+						return rollup.rollup( options ).then( bundle => {
+							const options = extend( {}, {
+								format: profile.format,
+								sourceMap: true,
+								dest: `${dest}.${profile.format}.js`
+							}, config.options );
+
+							bundle.write( options );
+
+							if ( config.test ) {
+								const { code, map } = bundle.generate( options );
+								config.test( code, map, profile );
+							}
+
+							if ( config.warnings ) {
+								compareWarnings( warnings, config.warnings );
+							} else if ( warnings.length ) {
+								throw new Error( `Unexpected warnings` );
+							}
+						});
+					});
+				});
 			});
 		});
 	});
